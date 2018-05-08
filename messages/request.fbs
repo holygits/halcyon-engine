@@ -1,0 +1,20 @@
+namespace requests;
+
+table NewFunc {
+  id:[byte];
+  runtime:string;
+  source:string;
+  packages:[string];
+  os_packages:[string];
+  author:[string];
+  name:[string];
+  version:[string];
+}
+
+table NewPipeline {
+  id:[byte];
+  pipeline:[string];
+  name:string;
+  author:string;
+  version:string;
+}

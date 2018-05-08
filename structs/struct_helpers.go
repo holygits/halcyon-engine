@@ -3,100 +3,135 @@ package structs
 import (
 	flatbuffers "github.com/google/flatbuffers/go"
 
-	messages "github.com/holygits/halcyon-engine/messages/structs"
+	messages "github.com/holygits/halcyon-engine/messages/system"
 )
 
-const (
-	TestUser = "test"
-)
+var testUserID []byte
+
+func init() {
+	testUserID = []byte("test")
+}
 
 /*
   (Un)Marshal structs to internal messaging format (flatbuffers)
 */
 
 // Marshal serialize Func to byte stream
-func (f *Func) Marshal() ([]byte, error) {
-	// TODO: get / re-use buffer from some pool
-	b := flatbuffers.NewBuilder()
+func (f *Func) Marshal(b *flatbuffers.Builder) []byte {
+	b.Reset()
+
 	messages.FuncStart(b)
-	messages.FuncAddId(f.ID)
-	messages.FuncAddRuntime(f.Runtime)
-	messages.FuncAddAuthor([]byte(TestUser))
-	messages.FuncAddVersion(f.Version)
-	messages.FuncAddName(f.Name)
-	messages.FuncAddSource(f.Source)
-	messages.FuncAddPackages(f.Packages)
-	messages.FuncAddOsPackages(f.OSPackages)
-	messages.FuncEnd(b)
-	b.Finish()
-	return b.FinishedBytes(), nil
+	messages.FuncAddId(b, b.CreateByteString(f.ID))
+	messages.FuncAddRuntime(b, b.CreateString(f.Runtime.String()))
+	messages.FuncAddAuthor(b, b.CreateString(f.Author))
+	messages.FuncAddVersion(b, b.CreateString(f.Version))
+	messages.FuncAddName(b, b.CreateString(f.Name))
+	messages.FuncAddCode(b, b.CreateString(f.Code))
+
+	// Build Packages vector
+	messages.FuncStartPackagesVector(b, len(f.Packages))
+	for _, p := range f.Packages {
+		b.PrependUOffsetT(b.CreateString(p))
+	}
+	packages := b.EndVector(len(f.Packages))
+	messages.FuncAddPackages(b, packages)
+
+	// Build OS Packages vector
+	messages.FuncStartOsPackagesVector(b, len(f.OSPackages))
+	for _, p := range f.OSPackages {
+		b.PrependUOffsetT(b.CreateString(p))
+	}
+	os := b.EndVector(len(f.OSPackages))
+	messages.FuncAddOsPackages(b, os)
+	b.Finish(messages.FuncEnd(b))
+
+	return b.FinishedBytes()
 }
 
 // Unmarshal deserialize Func from byte stream
-func (f *Func) Unmarshal(buf []byte) error {
-	return messages.GetRootAsFunc(buf, 0), nil
+func (f *Func) Unmarshal(buf []byte) *messages.Func {
+	return messages.GetRootAsFunc(buf, 0)
 }
 
 // Marshal serialize FuncExecution to byte stream
-func (f *FuncExecution) Marshal() ([]byte, error) {
-	// TODO: get / re-use buffer from some pool
-	b := flatbuffers.NewBuilder()
+func (f *FuncExecution) Marshal(b *flatbuffers.Builder) []byte {
+	b.Reset()
+
 	messages.FuncExecutionStart(b)
-	messages.FuncExecutionAddId(f.ID)
-	messages.FuncExecutionAddFuncId(f.FuncID)
-	messages.FuncExecutionAddStdOut(f.StdOut)
-	messages.FuncExecutionAddStdErr(f.StdErr)
-	messages.FuncExecutionAddUser([]byte(TestUser))
-	messages.FuncExecutionAddContext(f.Ctx)
-	messages.FuncExecutionAddStart(f.Start)
-	messages.FuncExecutionAddEnd(f.End)
-	messages.FuncExecutionAddDuration(f.Duration)
-	messages.FuncExecutionEnd(b)
-	b.Finish()
-	return b.FinishedBytes(), nil
+	messages.FuncExecutionAddId(b, b.CreateByteString(f.ID))
+	messages.FuncExecutionAddFuncId(b, b.CreateByteString(f.FuncID))
+	messages.FuncExecutionAddStdout(b, b.CreateString(f.StdOut))
+	messages.FuncExecutionAddStderr(b, b.CreateString(f.StdErr))
+	messages.FuncExecutionAddUserId(b, b.CreateByteString(testUserID))
+	messages.FuncExecutionAddContext(b, b.CreateString(f.Ctx))
+	messages.FuncExecutionAddStart(b, f.Start)
+	messages.FuncExecutionAddEnd(b, f.End)
+	messages.FuncExecutionAddDuration(b, f.Duration)
+	b.Finish(messages.FuncExecutionEnd(b))
+
+	return b.FinishedBytes()
 }
 
 // Unmarshal deserialize FuncExecution from byte stream
-func (f *FuncExecution) Unmarshal(buf []byte) error {
-	return messages.GetRootAsFuncExecution(buf, 0), nil
+func (f *FuncExecution) Unmarshal(buf []byte) *messages.FuncExecution {
+	return messages.GetRootAsFuncExecution(buf, 0)
 }
 
 // Marshal serialize Pipeline to byte stream
-func (p *Pipeline) Marshal() ([]byte, error) {
-	b := flatbuffers.NewBuilder()
+func (p *Pipeline) Marshal(b *flatbuffers.Builder) []byte {
+	b.Reset()
+
 	messages.PipelineStart(b)
-	messages.PipelineAddId(p.ID)
-	messages.PipelineAddAuthor([]byte(TestUser))
-	messages.PipelineAddVersion(p.Version)
-	messages.PipelineAddName(p.Name)
-	messages.PipelineAddSource(p.Source)
-	messages.PipelineEnd(b)
-	b.Finish()
-	return b.FinishedBytes(), nil
+	messages.PipelineAddId(b, b.CreateByteString(p.ID))
+	messages.PipelineAddAuthor(b, b.CreateByteString(testUserID))
+	messages.PipelineAddVersion(b, b.CreateString(p.Version))
+	messages.PipelineAddName(b, b.CreateString(p.Name))
+
+	// Build pipeline vector
+	messages.PipelineStartStagesVector(b, len(p.Stages))
+	for _, id := range p.Stages {
+		b.PrependUOffsetT(b.CreateByteString(id))
+	}
+	funcIDs := b.EndVector(len(p.Stages))
+	messages.PipelineAddStages(b, funcIDs)
+
+	b.Finish(messages.PipelineEnd(b))
+
+	return b.FinishedBytes()
 }
 
 // Unmarshal deserialize Pipeline from byte stream
-func (p *Pipeline) Unmarshal(buf []byte) error {
-	return messages.GetRootAsPipeline(buf, 0), nil
+func (p *Pipeline) Unmarshal(buf []byte) *messages.Pipeline {
+	return messages.GetRootAsPipeline(buf, 0)
 }
 
 // Marshal serialize PipelineExecution to byte stream
-func (p *PipelineExecution) Marshal() ([]byte, error) {
-	b := flatbuffers.NewBuilder()
+func (p *PipelineExecution) Marshal(b *flatbuffers.Builder) []byte {
+	b.Reset()
+
 	messages.PipelineExecutionStart(b)
-	messages.PipelineExecutionAddId(p.ID)
-	messages.PipelineExecutionAddPipelineId(p.PipelineID)
-	messages.PipelineExecutionAddUser([]byte(TestUser))
-	messages.PipelineExecutionAddStages(p.Stages)
-	messages.PipelineExecutionAddStart(p.Start)
-	messages.PipelineExecutionAddEnd(p.End)
-	messages.PipelineExecutionAddDuration(p.Duration)
-	messages.PipelineExecutionEnd(b)
-	b.Finish()
-	return b.FinishedBytes(), nil
+	messages.PipelineExecutionAddId(b, b.CreateByteString(p.ID))
+	messages.PipelineExecutionAddPipelineId(b, b.CreateByteString(p.PipelineID))
+	messages.PipelineExecutionAddUserId(b, b.CreateByteString(testUserID))
+
+	// Build pipeline vector
+	messages.PipelineExecutionStartStagesVector(b, len(p.Stages))
+	for _, id := range p.Stages {
+		b.PrependUOffsetT(b.CreateByteString(id))
+	}
+	funcIDs := b.EndVector(len(p.Stages))
+	messages.PipelineExecutionAddStages(b, funcIDs)
+
+	messages.PipelineExecutionAddStart(b, p.Start)
+	messages.PipelineExecutionAddEnd(b, p.End)
+	messages.PipelineExecutionAddDuration(b, p.Duration)
+
+	b.Finish(messages.PipelineExecutionEnd(b))
+
+	return b.FinishedBytes()
 }
 
 // Unmarshal deserialize PipelineExecution from byte stream
-func (p *PipelineExecution) Unmarshal(buf []byte) error {
-	return messages.GetRootAsPipelineExecution(buf, 0), nil
+func (p *PipelineExecution) Unmarshal(buf []byte) *messages.PipelineExecution {
+	return messages.GetRootAsPipelineExecution(buf, 0)
 }

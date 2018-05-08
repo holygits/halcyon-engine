@@ -1,3 +1,3 @@
 default:
-		flatc -g messages/*.fbs
+		cd messages && flatc -g *.fbs
 		go build -o halcyon

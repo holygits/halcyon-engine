@@ -1,0 +1,49 @@
+namespace system;
+
+// Func is a self-contained executable code block
+table Func {
+  id:[byte];
+  runtime:string;
+  code:string;
+  packages:[string];
+  os_packages:[string];
+  author:string;
+  name:string;
+  version:string;
+}
+
+table FuncExecution {
+  id:[byte];
+  func_id:[byte];
+  user_id:[byte];
+  context:string;
+  stdout:string;
+  stderr:string;
+  start:uint32;
+  end:uint32;
+  duration:uint32;
+}
+
+// Pipeline stage ID table to allow nested byte vectors
+table Stage {
+  id: [byte];
+}
+
+//Pipeline an immutable DAG of functions
+table Pipeline {
+  id:[byte];
+  stages:[Stage]; // ordered list of func IDs
+  name:string;
+  author:string;
+  version:string;
+}
+
+table PipelineExecution {
+  id:[byte];
+  pipeline_id:[byte];
+  user_id:[byte];
+  stages:[Stage]; // ordered list of func execution IDs
+  start:uint32;
+  end:uint32;
+  duration:uint32;
+}

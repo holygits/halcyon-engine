@@ -12,4 +12,6 @@ type Broker interface {
 	QFuncDel() error
 	QFuncResp() error
 	QPipelineResp() error
+	// Poll starts polling the broker for messages
+	Poll()
 }
