@@ -27,24 +27,24 @@ type FuncExecution struct {
 // Runtime is an enum indicating supported func runtimes
 type Runtime uint8
 
-var runtimes = map[string]Runtime{
-	"python":     Python,
-	"javascript": Javascript,
-	"r":          R,
-	"go":         Go,
+var Runtimes = map[string]Runtime{
+	"py": RuntimePython,
+	"js": RuntimeJavascript,
+	"r":  RuntimeR,
+	"go": RuntimeGo,
 }
 
 // Runtime enumeration
 const (
-	Python = iota
-	Javascript
-	R
-	Go
+	RuntimePython = iota
+	RuntimeJavascript
+	RuntimeR
+	RuntimeGo
 )
 
 // String returns Runtime string representation
 func (r Runtime) String() string {
-	for k, v := range runtimes {
+	for k, v := range Runtimes {
 		if v == r {
 			return k
 		}

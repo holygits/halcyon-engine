@@ -12,6 +12,7 @@ unique IDs using xid
 storage using bbolt
 - Broker interface + implementation
 - Datastore interface + implementation
+Write Tests
  
 # Function builds
 Use dedicated build nodes
