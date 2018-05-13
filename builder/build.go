@@ -2,13 +2,13 @@ package builder
 
 import (
 	"errors"
+	"fmt"
 	"os"
-  "fmt"
 	"path"
 	"strconv"
-  "strings"
-  "text/template"
-  "sync"
+	"strings"
+	"sync"
+	"text/template"
 
 	//"github.com/cespare/xxhash"
 
@@ -18,33 +18,33 @@ import (
 
 type runtimeBuilder struct {
 	buildPath string
-	c       *containerd.Containerd
+	c         *containerd.Containerd
 }
 
 type Package struct {
-  Path string
+	Path string
 }
 
 func init() {
-  
-  // TODO: needs to be moved to correct location
-  templateDir := os.Getenv("HALCYON_TEMPLATE_DIR")
-  if len(templateDir) == 0 {
-    // Running in development mode
-    templateDir = "./template"
-  }
-  templateDir = strings.TrimSuffix(templateDir, "/")
 
-  // Load Templates
-  var err error
-  images, err = template.ParseGlob(path.Join(templateDir, "docker", "*.Dockerfile"))
-  if err != nil {
-    log.Fatalf("Failed loading docker templates in: %s", err)
-  }
-  funcfiles, err = template.ParseGlob(path.Join(templateDir, "func", "*"))
-  if err != nil {
-    log.Fatalf("Failed loading func templates in: %s", err)
-  }
+	// TODO: needs to be moved to correct location
+	templateDir := os.Getenv("HALCYON_TEMPLATE_DIR")
+	if len(templateDir) == 0 {
+		// Running in development mode
+		templateDir = "./template"
+	}
+	templateDir = strings.TrimSuffix(templateDir, "/")
+
+	// Load Templates
+	var err error
+	images, err = template.ParseGlob(path.Join(templateDir, "docker", "*.Dockerfile"))
+	if err != nil {
+		log.Fatalf("Failed loading docker templates in: %s", err)
+	}
+	funcfiles, err = template.ParseGlob(path.Join(templateDir, "func", "*"))
+	if err != nil {
+		log.Fatalf("Failed loading func templates in: %s", err)
+	}
 
 }
 
@@ -60,36 +60,37 @@ func newRuntimeBuilder(buildPath string) (*runtimeBuilder, error) {
 		return nil, err
 	}
 
-  // Pull runtime resolver images
-  var wg sync.WaitGroup
-  wg.Add(len(structs.Runtimes))
-  for _, r := range structs.Runtimes {
-    id := fmt.Sprintf(containerd.ResolverRepo, r, ":latest")
-    go func() {
-      defer wg.Done()
+	// Pull runtime resolver images
+	var wg sync.WaitGroup
+	wg.Add(len(structs.Runtimes))
+	for _, r := range structs.Runtimes {
+		id := fmt.Sprintf(containerd.ResolverRepo, r, ":latest")
 
-      img, err := c.Pull(id)
-      if err != nil {
-        return nil, err
-      }
+		go func() {
+			defer wg.Done()
 
-      // TODO: start resolver container
-      redis, err := c.NewContainer(c.Context, img)
-      if err != nil {
-        return nil, err
-      }
-      task, err := redis.NewTask(context, )
-      if err != nil {
-        return nil, err
-      }
-    }
-  }
-  wg.Wait()
+			img, err := c.Pull(id)
+			if err != nil {
+				return nil, err
+			}
 
+			// TODO: start resolver container
+			redis, err := c.NewContainer(c.Context, img)
+			if err != nil {
+				return nil, err
+			}
+			task, err := redis.NewTask(context)
+			if err != nil {
+				return nil, err
+			}
+		}()
+
+	}
+	wg.Wait()
 
 	return &runtimeBuilder{
 		buildPath: buildPath,
-		c:       c,
+		c:         c,
 	}, nil
 }
 
@@ -116,18 +117,19 @@ func (r *runtimeBuilder) BuildPackage(f *structs.Func, s *buildStrategy) error {
 // Publish builds func image and pushes to registry
 func Publish(id, pack string) (err error) {
 
-  // Build package as Docker Image & Push to repository.
-  if err = docker.ImageBuild(id, pack); err != nil {
-    log.Errorf("Failed to build image: %s", err)
-    return
-  }
+	// Build package as Docker Image & Push to repository.
+	if err = docker.ImageBuild(id, pack); err != nil {
+		log.Errorf("Failed to build image: %s", err)
+		return
+	}
 
-  if err = docker.ImagePush(id); err != nil {
-    return
-  }
+	if err = docker.ImagePush(id); err != nil {
+		return
+	}
 
-  log.Infof("Published func: %s", id)
-  retur
+	log.Infof("Published func: %s", id)
+	return
+}
 
 type buildStrategy interface {
 	Command() []string
@@ -135,29 +137,29 @@ type buildStrategy interface {
 
 func build(f *structs.Func) error {
 	/* cases:
-	    1. No existing image (initial case)
-	    2. Image exists
-	       - A: packages are the same
-	       - B: packages have changed
-	       - C: OSPackages are the same
-	       - D: OSPackages have changed
+		    1. No existing image (initial case)
+		    2. Image exists
+		       - A: packages are the same
+		       - B: packages have changed
+		       - C: OSPackages are the same
+		       - D: OSPackages have changed
 
-	   Every build should:
-	   1. Resolve runtime dependencies
-	      - skip if "packages" is empty or "packages" is unchanged from a previous build
-	   2. Template a function file with function source code
-     3. Generate a dockerfile
-	   3. Build the dockerfile and export as tar
+		   Every build should:
+		   1. Resolve runtime dependencies
+		      - skip if "packages" is empty or "packages" is unchanged from a previous build
+		   2. Template a function file with function source code
+	     3. Generate a dockerfile
+		   3. Build the dockerfile and export as tar
 	*/
 
 	switch f.Runtime {
 	case structs.RuntimeJavascript:
-    // e.g. yarn add <packages> --modules-folder=<<func-id-version>
+		// e.g. yarn add <packages> --modules-folder=<<func-id-version>
 	case structs.RuntimePython:
 		// TODO: submit packages to the runtime builder container
-    // e.g. pip install --install-option="--prefix=<func-id-version>" -f
+		// e.g. pip install --install-option="--prefix=<func-id-version>" -f
 	case structs.RuntimeR:
-    // e.g. install.packages(c('p1', 'p2')lib='./<func-id-version>')
+		// e.g. install.packages(c('p1', 'p2')lib='./<func-id-version>')
 	default:
 		return errors.New("Invalid Runtime: " + strconv.Itoa(int(f.Runtime)))
 	}

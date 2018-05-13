@@ -6,28 +6,32 @@ import (
 
 // Level provides datastore.Datastore interface over boltdb
 type Level struct {
-	*level.Storage
+	*level.DB
 }
 
 func makeKey(r Record) []byte {
 	return append([]byte(r.Name()), r.ID()...)
 }
-func (db *level) Put(r Record) error {
+
+// Put stores Record in db
+func (l *Level) Put(r Record) error {
 	v, err := r.Marshal()
 	if err != nil {
 		return err
 	}
-	return db.Put(makeKey(r), v, nil)
+	return l.DB.Put(makeKey(r), v, nil)
 }
 
-func (db *Level) Get(r Record) error {
-	buf, err := db.Get(makeKey(r), nil)
+// Get retrieves record from db
+func (l *Level) Get(r Record) error {
+	buf, err := l.DB.Get(makeKey(r), nil)
 	if err == nil {
 		err = r.Unmarshal(buf)
 	}
 	return err
 }
 
-func (db *Level) Delete(r Record) error {
-	return db.Delete(makeKey(r), nil)
+// Delete removes record form db
+func (l *Level) Delete(r Record) error {
+	return l.DB.Delete(makeKey(r), nil)
 }

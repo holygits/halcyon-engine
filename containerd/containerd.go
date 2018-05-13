@@ -1,107 +1,138 @@
-// Package containerd wraps continerd/containerd providing an API layer
+// Package containerd wraps continerd/containerd  providing a minimal API layer
+// halcyon only requires image distribution, snapshotting functionality, and container create/exec/delete
 package containerd
 
 import (
-  "context"
-  "io"
+	"context"
+	"errors"
+	"log"
 
 	"github.com/containerd/containerd"
-	// "github.com/containerd/containerd/cio"
+	"github.com/containerd/containerd/cio"
+	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/mount"
+	"github.com/containerd/containerd/oci"
+	"github.com/containerd/containerd/platforms"
+
+	"github.com/opencontainers/image-spec/identity"
 )
 
+// TODO: Create a high-level driver package which unifies containerd & libcontainer
+
+// Docker Image repositories
 const (
-	// Docker Repositoriesß
 	BuilderRepo  = "halcyo/builder"
 	EngineRepo   = "halcyo/engine"
 	ResolverRepo = "halcyo/%s-resolver"
-  RuntimeRepo =ß "halcyo/%s-runtime"
+	RuntimeRepo  = "halcyo/%s-runtime"
 	WorkerRepo   = "halcyo/worker"
 
-	// Commands
-	RunForeverCmd = "tail -f /dev/null"
+	// RunForeverCmd a command which keeps a container running indefinitley
+	ContainerdSock   = "/run/containerd/containerd.sock"
+	DefaultNamespace = "halcyon"
+	RunForeverCmd    = "tail -f /dev/null"
 )
 
-// Client provides a halcyon API over containerd
+// Containerd provides a convenient client API over containerd.Client
 type Containerd struct {
-  context *context.Context
-  *containerd.Containerd
+	*containerd.Client
 }
 
-// NewContanerd instantiates a new Contanerd instance
-func NewContanerd() (*Containerd, error) {
-	client, err := containerd.New("/run/containerd/containerd.sock",
-                                containerd.WithDefaultNamespace("halcyon"))
+// New instantiates a new Containerd instance
+func New() (*Containerd, error) {
+	client, err := containerd.New(ContainerdSock, containerd.WithDefaultNamespace(DefaultNamespace))
+	if err != nil {
+		return nil, err
+	}
+
+	// init Snapshot service
+	client.SnapshotService(containerd.DefaultSnapshotter)
+
 	return &Containerd{
-    context: context.Background(),
 		client,
 	}, err
 }
 
-// Exec runs a new command in a container
-func (c *Containerd) Exec(id string, cmd []string) (stdout, stderr []byte, err error) {
+// Pull pulls an image with id
+func (c *Containerd) Pull(image string) (containerd.Image, error) {
+	ctx := context.Background()
+	return c.Client.Pull(ctx, image, containerd.WithPullUnpack)
+}
 
-    cli, ctx, cancel, err := commands.NewClient(context)
-    if err != nil {
-      return
-    }
-    defer cancel()
+// GetImage returns an image as images.Image
+func (c *Containerd) GetImage(image string) (images.Image, error) {
+	ctx := context.Background()
+	return c.Client.ImageService().Get(ctx, image)
+}
 
-    container, err := cli.LoadContainer(ctx, id)
-    if err != nil {
-      return
-    }
+// NewSnapshot creates a snapshot RootFS from an image
+func (c *Containerd) NewSnapshot(id string, i images.Image) ([]mount.Mount, error) {
+	ctx := context.Background()
+	// get diff IDs from image
+	diffs, err := i.RootFS(ctx, c.ContentStore(), platforms.Default())
+	if err != nil {
+		return nil, err
+	}
+	parent := identity.ChainID(diffs).String()
+	return c.SnapshotService(containerd.DefaultSnapshotter).Prepare(ctx, id, parent)
+}
 
-    spec, err := container.Spec(ctx)
-    if err != nil {
-      return
-    }
+// DeleteSnapshot creates a snapshot RootFS from an image
+func (c *Containerd) DeleteSnapshot(id string) error {
+	ctx := context.Background()
+	return c.SnapshotService(containerd.DefaultSnapshotter).Remove(ctx, id)
+}
 
-    task, err := container.Task(ctx, nil)
-    if err != nil {
-      return
-    }
+// MountSnapshot mounts the snapshot files at the given rootfs path
+func (c *Containerd) MountSnapshot(rootfs string, mounts []mount.Mount) (err error) {
 
-    pspec := spec.Process
-    pspec.Terminal = false
-    pspec.Args = cmd
+	// Clean up if mounting fails
+	defer func() {
+		if err != nil {
+			if err2 := c.UnmountSnapshot(rootfs); err != nil {
+				log.Printf("MountSnapshot failed clean up: %s\n", err2)
+			}
+		}
+	}()
 
-    // Create Stdin/out/err streams
-    rStdout, wStdout := io.Pipe()
-    defer rStdout.Close()
-    defer wStdout.Close()
+	// Mount layers as RootFS at rootfs
+	for _, m := range mounts {
+		if err = m.Mount(rootfs); err != nil {
+			return errors.New("failed to mount rootfs component")
+		}
+	}
 
-    rStdin, wStdin := io.Pipe()
-    defer rStdin.Close()
-    defer wStdin.Close()
+	return
+}
 
-    rStderr, wStderr := io.Pipe()
-    defer rStderr.Close()
-    defer wStderr.Close()
+// UnmountSnapshot unmounts all snapshots from rootfs
+func (c *Containerd) UnmountSnapshot(rootfs string) error {
+	return mount.UnmountAll(rootfs, 0)
+}
 
-    ioCreator := cio.NewCreator(cio.WithStreams(rStdin, wStdout, wStderr))
-    process, err := task.Exec(ctx, context.String(id), pspec, ioCreator)
-    if err != nil {
-      return
-    }
-    defer process.Delete(ctx)
+// NewContainer creates a new container
+func (c *Containerd) NewContainer(id string, image containerd.Image) (*containerd.Task, error) {
+	ctx := context.Background()
 
-    statusC, err := process.Wait(ctx)
-    if err != nil {
-      return
-    }
+	con, err := c.Client.NewContainer(ctx, id,
+		containerd.WithNewSnapshot(image.Name()+"-rootfs", image),
+		containerd.WithNewSpec(oci.WithImageConfig(image)),
+	)
 
-    sigc := commands.ForwardAllSignals(ctx, process)
-    defer commands.StopCatch(sigc)
+	// create a new task
+	task, err := con.NewTask(ctx, cio.NewCreator(cio.WithStdio))
 
-    if err := process.Start(ctx); err != nil {
-      return
-    }
-    status := <-statusC
-    code, out, err := status.Result()
-    if err != nil {
-      return
-    }
-    
+	// the task is now running and has a pid that can be use to setup networking
+	// or other runtime settings outside of containerd
+	// pid := task.Pid()
 
-    return nil
+	// Let clients clean up Task
+	// defer task.Delete(ctx)
+
+	// wait for the task to exit and get the exit status
+	// status, err := task.Wait(ctx)
+
+	// start the process inside the container
+	err = task.Start(ctx)
+	return &task, err
 }
