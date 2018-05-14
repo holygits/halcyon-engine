@@ -42,15 +42,9 @@ func defaultConfig(id, rootfs string) *config {
 		},
 		MaskPaths: []string{
 			"/proc/kcore",
-			"/proc/latency_stats",
-			"/proc/timer_list",
-			"/proc/timer_stats",
-			"/proc/sched_debug",
 			"/sys/firmware",
 		},
 		ReadonlyPaths: []string{
-			"/proc/asound",
-			"/proc/bus",
 			"/proc/fs",
 			"/proc/irq",
 			"/proc/sys",
@@ -58,12 +52,12 @@ func defaultConfig(id, rootfs string) *config {
 		},
 		Devices: configs.DefaultAutoCreatedDevices,
 		Mounts: []*configs.Mount{
-			{
-				Source:      "/etc/resolv.conf",
-				Destination: "/etc/resolv.conf",
-				Device:      "bind",
-				Flags:       unix.MS_RDONLY | unix.MS_BIND,
-			},
+			// {
+			// 	Source:      "/etc/resolv.conf",
+			// 	Destination: "/etc/resolv.conf",
+			// 	Device:      "bind",
+			// 	Flags:       unix.MS_RDONLY | unix.MS_BIND,
+			// },
 			{
 				Source:      "proc",
 				Destination: "/proc",

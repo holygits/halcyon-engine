@@ -104,16 +104,25 @@ func (d *Driver) Create(id string) error {
 	return c.Start(p)
 }
 
-// Delete container with id
+// Delete container with id and clean up
 func (d *Driver) Delete(id string) (err error) {
 	c, err := d.Load(id)
 	if err != nil {
 		return
 	}
 
-	c.Destroy()
-	os.RemoveAll(filepath.Join(d.containerDir, id))
-	os.RemoveAll(d.BundleDir(id))
+	// Don't short-circuit on errors, do a best effort clean up
+	if err = c.Destroy(); err != nil {
+		log.Error("conatiner Destroy()", zap.Error(err))
+	}
+	if err = os.RemoveAll(d.BundleDir(id)); err != nil {
+		log.Error("conatiner Destroy()", zap.Error(err))
+	}
+
+	if err = os.RemoveAll(filepath.Join(d.containerDir, id)); err != nil {
+		log.Error("conatiner Destroy()", zap.Error(err))
+	}
+
 	return
 }
 
@@ -126,7 +135,7 @@ func (d *Driver) Exec(id string, cmd []byte) (stdout, stderr []byte, err error) 
 		return
 	}
 
-	// Pipes
+	// Stdio pipes
 	rErr, wErr := io.Pipe()
 	rOut, wOut := io.Pipe()
 	rIn, wIn := io.Pipe()
@@ -139,12 +148,13 @@ func (d *Driver) Exec(id string, cmd []byte) (stdout, stderr []byte, err error) 
 
 	// Process
 	var p *libcontainer.Process
-	if p, err = d.loadProcessJSON(d.BundleDir(id)); err != nil {
+	if p, err = d.loadProcessJSON(id); err != nil {
 		return
 	}
+	p.Args = append(p.Args)
 	p.Stdin = rIn
-	p.Stdout = wOut
 	p.Stderr = wErr
+	p.Stdout = wOut
 
 	// Run
 	go func() {
@@ -153,22 +163,22 @@ func (d *Driver) Exec(id string, cmd []byte) (stdout, stderr []byte, err error) 
 			return
 		}
 		p.Wait()
-		defer rIn.Close()
-		defer wErr.Close()
-		defer wOut.Close()
+		// Clean up stdio pipes
+		rIn.Close()
+		wOut.Close()
+		wErr.Close()
 	}()
-
-	// Read stderr result
-	defer rErr.Close()
-	stderr, err = ioutil.ReadAll(rErr)
-	if err != nil {
-		return
-	}
 
 	// Read stdout result
 	defer rOut.Close()
 	stdout, err = ioutil.ReadAll(rOut)
+	if err != nil {
+		return
+	}
 
+	// Read stderr result
+	defer rErr.Close()
+	stderr, err = ioutil.ReadAll(rErr)
 	return
 }
 
